@@ -1,0 +1,6 @@
+[submodule "pyxdaq"]
+	path = pyxdaq
+	url = git@github.com:kontex-neuro/pyxdaq.git
+[submodule "PyThorVision"]
+	path = PyThorVision
+	url = git@github.com:kontex-neuro/PyThorVision.git
