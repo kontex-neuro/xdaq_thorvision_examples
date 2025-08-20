@@ -1,2 +1,9 @@
+# OS
 /.DS_Store
+
+# Recordings
 *.mkv
+
+# Python
+/.venv
+/*.egg-info

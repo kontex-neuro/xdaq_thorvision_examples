@@ -1,14 +1,12 @@
 import signal
 import time
-import threading
+import os
 
-from pyxdaq.pyxdaq.datablock import DataBlock
-from pyxdaq.pyxdaq.xdaq import get_XDAQ
-from PyThorVision.pythorvision import XdaqClient
+from pyxdaq.xdaq import get_XDAQ
+from pythorvision import ThorVisionClient
 
 
 is_running = True
-recording_triggered = False
 
 
 def _handle_sigint(sig, frame):
@@ -21,26 +19,20 @@ signal.signal(signal.SIGINT, _handle_sigint)
 
 
 xdaq = get_XDAQ()
-xdaq.enableDataStream("all", True)
-num_streams = xdaq.numDataStream
-frame_size = xdaq.getSampleSizeBytes()
-sample_rate = xdaq.getSampleRate()
-print(
-    f"Frame size: {frame_size} bytes @ {sample_rate} Hz = "
-    f"{frame_size * sample_rate / 1e6:.2f} MB/s"
-)
 
 
-client = XdaqClient()
+client = ThorVisionClient()
 # Recording directory name
 # will be created in the current working directory
 recordings_dir = "recordings"
 cameras = client.list_cameras()
+
 if not cameras:
     print("No cameras found.")
     exit(1)
 
-print(f"Found {len(cameras)} cameras:")
+n_cameras = len(cameras)
+print(f"Found {n_cameras} cameras:")
 for camera in cameras:
     print(f" - {camera.id}: {camera.name}")
 
@@ -52,14 +44,20 @@ def record_cameras(duration=10):
     print(f"[Camera] Starting {len(cameras)} camera(s) for {duration} seconds...")
     streams = []
 
+    existing_files = set()
+    if os.path.exists(recordings_dir):
+        existing_files = set(os.listdir(recordings_dir))
+
+    # Start all cameras connected to XDAQ
     for camera in cameras:
-        # find the first JPEG capability
+        # Find the first JPEG capability
         jpeg_cap = next(
             (cap for cap in camera.capabilities if cap.media_type == "image/jpeg"), None
         )
         if not jpeg_cap:
             print(f"[Camera] No JPEG capability for {camera.id}, skipping")
             continue
+        
         stream = client.start_stream_with_recording(
             camera=camera,
             capability=jpeg_cap,
@@ -70,13 +68,27 @@ def record_cameras(duration=10):
 
     time.sleep(duration)
 
-    print("[Camera] Stopping streams...")
+    # Stop all cameras
     for camera, _ in streams:
         try:
             client.stop_stream(camera.id)
             print(f"[Camera] Stopped stream for {camera.id}")
         except Exception as e:
             print(f"[Camera] Error stopping stream for {camera.id}: {e}")
+
+    # Get the new files that were created during this recording session
+    recorded_files = []
+    if os.path.exists(recordings_dir):
+        current_files = set(os.listdir(recordings_dir))
+        new_files = current_files - existing_files
+
+        for filename in new_files:
+            file_path = os.path.join(recordings_dir, filename)
+
+            if os.path.isfile(file_path):
+                recorded_files.append(file_path)
+
+    return recorded_files
 
 
 def on_data_received(data: bytes, error: str):
@@ -90,7 +102,6 @@ def on_data_received(data: bytes, error: str):
     CALLBACK LIFETIME: even after xdaq.stop(), this callback may still be
     invoked until exit the start_receiving_aligned_buffer context.
     """
-    global recording_triggered
 
     if error:
         print(f"[XDAQ error] {error}")
@@ -101,41 +112,32 @@ def on_data_received(data: bytes, error: str):
 
     buffer = bytearray(data)
     length = len(buffer)
-    if length % frame_size != 0:
-        if is_running:
-            print(f"[Warning] invalid frame length {length}")
-        else:
-            # invalid frame length, could be the last data chunk.
-            pass
+    # Error check: if not running, it could be the last data chunk.
+    if not is_running:
+        print(f"[Warning] invalid frame length {length}")
         return
 
-    block = DataBlock.from_buffer(xdaq.rhs, frame_size, buffer, num_streams)
-    samples = block.to_samples()
+    # Parse: convert buffer to samples
+    samples = xdaq.buffer_to_samples(buffer)
 
-    ts = samples.ts[0]
-    if not recording_triggered and ts >= 100_000:
-        recording_triggered = True
-        print(f"[Trigger] Timestamp {ts} reached, starting camera recording!")
-
-        # Start recording on all cameras for 10 seconds
-        threading.Thread(target=record_cameras, args=(10,), daemon=True).start()
-
-    print(f"[XDAQ] Chunk: {len(buffer):8d} B | Timestep: {ts:8d}", end="\r")
+    print(f"[XDAQ] Chunk: {length:8d} B | Timestep: {samples.ts[0]:8d}", end="\r")
 
 
+print("Starting XDAQ acquisition and camera recording for 10 seconds...")
 # Use the aligned-buffer context to start/stop the callback queue
-with xdaq.start_receiving_aligned_buffer(
-    frame_size,
+with xdaq.start_receiving_buffer(
     on_data_received,
 ):
     # Kick off acquisition
     xdaq.start(continuous=True)
 
     start_time = time.time()
-    duration = 30
+    duration = 10
+
+    recorded_files = record_cameras(duration)
 
     # Wait until SIGINT
-    # or until the run duration (30 seconds) is reached
+    # or until the run duration (10 seconds) is reached
     while is_running and (time.time() - start_time < duration):
         time.sleep(0.1)
 
@@ -144,3 +146,10 @@ with xdaq.start_receiving_aligned_buffer(
     # Callback may still run until we exit this block
 
 print("\nExiting...")
+
+print(f"Recorded {n_cameras} cameras in {os.path.abspath(recordings_dir)}")
+if recorded_files:
+    print("Recorded files:")
+
+    for file_path in recorded_files:
+        print(f"  - {file_path}")
