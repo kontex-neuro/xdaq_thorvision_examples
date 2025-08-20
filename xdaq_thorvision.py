@@ -124,7 +124,13 @@ def on_data_received(data: bytes, error: str):
 
 
 print("Starting XDAQ acquisition and camera recording for 10 seconds...")
-# Use the aligned-buffer context to start/stop the callback queue
+
+duration = 10    
+
+# Start video recording
+recorded_files = record_cameras(duration)
+
+# Start receiving data from headstages, video is still recording in the background
 with xdaq.start_receiving_buffer(
     on_data_received,
 ):
@@ -132,10 +138,6 @@ with xdaq.start_receiving_buffer(
     xdaq.start(continuous=True)
 
     start_time = time.time()
-    duration = 10
-
-    recorded_files = record_cameras(duration)
-
     # Wait until SIGINT
     # or until the run duration (10 seconds) is reached
     while is_running and (time.time() - start_time < duration):
