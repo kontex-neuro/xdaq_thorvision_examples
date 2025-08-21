@@ -72,9 +72,6 @@ def stop_recording(streams: dict, duration_sec: int, existing_files: set):
     """
     Stop recording on all cameras
     """
-    while time.time() - start_time < duration_sec:
-        time.sleep(0.1)
-
     # Stop all cameras
     for camera, _ in streams:
         try:
