@@ -31,17 +31,16 @@ if not cameras:
     print("No cameras found.")
     exit(1)
 
-n_cameras = len(cameras)
-print(f"Found {n_cameras} cameras:")
+print(f"Found {len(cameras)} cameras:")
 for camera in cameras:
     print(f" - {camera.id}: {camera.name}")
 
 
-def record_cameras(duration=10):
+def start_recording():
     """
-    Start all cameras for N seconds and then stop them.
+    Start recording on all cameras
     """
-    print(f"[Camera] Starting {len(cameras)} camera(s) for {duration} seconds...")
+    print(f"[Camera] Starting {len(cameras)} camera(s) for {duration_sec} seconds...")
     streams = []
 
     existing_files = set()
@@ -57,7 +56,7 @@ def record_cameras(duration=10):
         if not jpeg_cap:
             print(f"[Camera] No JPEG capability for {camera.id}, skipping")
             continue
-        
+
         stream = client.start_stream_with_recording(
             camera=camera,
             capability=jpeg_cap,
@@ -66,7 +65,15 @@ def record_cameras(duration=10):
         )
         streams.append((camera, stream))
 
-    time.sleep(duration)
+    return streams, existing_files
+
+
+def stop_recording(streams: dict, duration_sec: int, existing_files: set):
+    """
+    Stop recording on all cameras
+    """
+    while is_running and (time.time() - start_time < duration_sec):
+        time.sleep(0.1)
 
     # Stop all cameras
     for camera, _ in streams:
@@ -76,8 +83,8 @@ def record_cameras(duration=10):
         except Exception as e:
             print(f"[Camera] Error stopping stream for {camera.id}: {e}")
 
-    # Get the new files that were created during this recording session
-    recorded_files = []
+    # Print newly recorded files
+    print(f"Recorded {len(streams)} cameras in {os.path.abspath(recordings_dir)}")
     if os.path.exists(recordings_dir):
         current_files = set(os.listdir(recordings_dir))
         new_files = current_files - existing_files
@@ -86,9 +93,7 @@ def record_cameras(duration=10):
             file_path = os.path.join(recordings_dir, filename)
 
             if os.path.isfile(file_path):
-                recorded_files.append(file_path)
-
-    return recorded_files
+                print(f"  - {file_path}")
 
 
 def on_data_received(data: bytes, error: str):
@@ -97,10 +102,10 @@ def on_data_received(data: bytes, error: str):
 
     NOTE: this callback holds the Python GIL. If you do heavy work here, the
     Python-side queue may back up (HW keeps running, but this queue grows).
-    It's OK to compute here as long as it keep up with the target rate.
+    It's OK to compute here as long as it keeps up with the target rate.
 
     CALLBACK LIFETIME: even after xdaq.stop(), this callback may still be
-    invoked until exit the start_receiving_aligned_buffer context.
+    invoked until exiting the start_receiving_aligned_buffer context.
     """
 
     if error:
@@ -114,21 +119,18 @@ def on_data_received(data: bytes, error: str):
     length = len(buffer)
     # Error check: if not running, it could be the last data chunk.
     if not is_running:
-        print(f"[Warning] invalid frame length {length}")
+        print(f"[Warning] Invalid frame length {length}")
         return
 
     # Parse: convert buffer to samples
     samples = xdaq.buffer_to_samples(buffer)
-
     print(f"[XDAQ] Chunk: {length:8d} B | Timestep: {samples.ts[0]:8d}", end="\r")
 
 
 print("Starting XDAQ acquisition and camera recording for 10 seconds...")
-
-duration = 10    
-
-# Start video recording
-recorded_files = record_cameras(duration)
+duration_sec = 10
+streams, existing_files = start_recording()
+start_time = time.time()
 
 # Start receiving data from headstages, video is still recording in the background
 with xdaq.start_receiving_buffer(
@@ -137,21 +139,13 @@ with xdaq.start_receiving_buffer(
     # Kick off acquisition
     xdaq.start(continuous=True)
 
-    start_time = time.time()
-    # Wait until SIGINT
-    # or until the run duration (10 seconds) is reached
-    while is_running and (time.time() - start_time < duration):
+    # Wait until SIGINT or until the run duration (10 seconds) is reached
+    while is_running and (time.time() - start_time < duration_sec):
         time.sleep(0.1)
 
     # Stop acquisition
     xdaq.stop(wait=True)
     # Callback may still run until we exit this block
 
+stop_recording(streams, duration_sec, existing_files)
 print("\nExiting...")
-
-print(f"Recorded {n_cameras} cameras in {os.path.abspath(recordings_dir)}")
-if recorded_files:
-    print("Recorded files:")
-
-    for file_path in recorded_files:
-        print(f"  - {file_path}")
