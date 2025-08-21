@@ -72,7 +72,7 @@ def stop_recording(streams: dict, duration_sec: int, existing_files: set):
     """
     Stop recording on all cameras
     """
-    while is_running and (time.time() - start_time < duration_sec):
+    while time.time() - start_time < duration_sec:
         time.sleep(0.1)
 
     # Stop all cameras
@@ -143,6 +143,9 @@ with xdaq.start_receiving_buffer(
     # Wait until SIGINT or until the run duration (10 seconds) is reached
     while is_running and (time.time() - start_time < duration_sec):
         time.sleep(0.1)
+
+    # After the run duration is reached, set is_running to False manually
+    is_running = False
 
     # Stop acquisition
     xdaq.stop(wait=True)
