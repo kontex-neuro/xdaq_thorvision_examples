@@ -105,7 +105,7 @@ def on_data_received(data: bytes, error: str):
     It's OK to compute here as long as it keeps up with the target rate.
 
     CALLBACK LIFETIME: even after xdaq.stop(), this callback may still be
-    invoked until exiting the start_receiving_aligned_buffer context.
+    invoked until exiting the start_receiving_buffer context.
     """
 
     if error:
@@ -117,9 +117,10 @@ def on_data_received(data: bytes, error: str):
 
     buffer = bytearray(data)
     length = len(buffer)
-    # Error check: if not running, it could be the last data chunk.
+    # Press Ctrl+C will set is_running to False,
+    # XDAQ notifies this callback here, it could be the last data chunk.
+    # Skip processing of the last data chunk and just return here.
     if not is_running:
-        print(f"[Warning] Invalid frame length {length}")
         return
 
     # Parse: convert buffer to samples
