@@ -115,14 +115,22 @@ def on_data_received(data: bytes, error: str):
     buffer = bytearray(data)
     length = len(buffer)
     # Press Ctrl+C will set is_running to False,
-    # XDAQ notifies this callback here, it could be the last data chunk.
+    # Signal notifies this callback here, it could be the last data chunk.
     # Skip processing of the last data chunk and just return here.
     if not is_running:
         return
 
     # Parse: convert buffer to samples
     samples = xdaq.buffer_to_samples(buffer)
-    print(f"[XDAQ] Chunk: {length:8d} B | Timestep: {samples.ts[0]:8d}", end="\r")
+    print(
+        f"[XDAQ] Chunk: {length:8d} B | Sample Index: {samples.sample_index[0]:8d}"
+        + (
+            f" | Timestep: {samples.timestamp[0]/1e6:8.3f} s "
+            if samples.timestamp is not None
+            else ""
+        ),
+        end="\r",
+    )
 
 
 print("Starting XDAQ acquisition and camera recording for 10 seconds...")

@@ -6,7 +6,7 @@ license-files = ["LICENSE"]
 readme = "README.md"
 
 requires-python = ">=3.6"
-dependencies = ["pyxdaq (==0.2.0)", "pythorvision (==0.1.0)"]
+dependencies = ["pyxdaq (==0.3.1)", "pythorvision (==0.1.0)"]
 
 [build-system]
 requires = ["setuptools>=42.0"]

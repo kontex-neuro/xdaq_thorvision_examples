@@ -3,7 +3,9 @@
 
 # Recordings
 *.mkv
+*.log
 
 # Python
 /.venv
 /*.egg-info
+/build
